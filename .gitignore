@@ -1,0 +1,23 @@
+# IDE and OS specific
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env*.local
+
+# Web frontend (Next.js)
+/web/node_modules
+/web/.next/
+/web/out/
+/web/build/
+/web/dist/
+/web/bun.lockb
+
+# Server backend (Rust)
+/server/target/

@@ -1,0 +1,31 @@
+# Biome
+biome.json
+biome.jsonc
+
+# Bun
+bun.lockb
+.pnpm-store/
+
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Environment
+.env
+.env.local
+.env*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
