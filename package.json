@@ -1,0 +1,23 @@
+{
+  "name": "pie-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently \"bun run dev:web\" \"bun run dev:server\"",
+    "dev:web": "cd web && bun run dev",
+    "dev:server": "cd server && cargo watch -x run",
+    "typecheck": "bun run typecheck:web",
+    "typecheck:web": "cd web && bun run typecheck",
+    "lint": "bun run lint:web",
+    "lint:web": "cd web && bun run lint",
+    "format": "bun run format:web && bun run format:server",
+    "format:web": "cd web && bun run format",
+    "format:server": "cd server && cargo fmt"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
