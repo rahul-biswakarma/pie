@@ -28,11 +28,11 @@ pub enum AppError {
     #[error("Internal error: {0}")]
     Internal(String),
 
-    #[error("Configuration error: {0}")]
-    Configuration(String),
+    #[error("Redis error: {0}")]
+    Redis(String),
 
-    #[error("Network error: {0}")]
-    Network(String),
+    #[error("Internal server error")]
+    InternalServerError,
 }
 
 impl IntoResponse for AppError {
@@ -41,8 +41,12 @@ impl IntoResponse for AppError {
             AppError::Authentication(_) => StatusCode::UNAUTHORIZED,
             AppError::InvalidMessage(_) => StatusCode::BAD_REQUEST,
             AppError::ConnectionNotFound | AppError::RoomNotFound => StatusCode::NOT_FOUND,
-            AppError::Configuration(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::Redis(_)
+            | AppError::InternalServerError
+            | AppError::Internal(_)
+            | AppError::WebRTC(_)
+            | AppError::Serialization(_)
+            | AppError::SendFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (status, self.to_string()).into_response()

@@ -1,12 +1,15 @@
 mod auth;
 mod comms;
+mod redis;
 mod error;
 
+use tokio::sync::Mutex;
 use axum::routing::get;
+use ::redis::Connection;
+use crate::redis as local_redis;
 use comms::websocket_handler;
 use dashmap::DashMap;
 use std::{env, sync::Arc};
-use tracing_subscriber;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -14,6 +17,7 @@ pub struct AppState {
     pub jwks_cache: Arc<DashMap<String, Jwk>>,
     pub supabase_anon_key: String,
     pub jwt_secret: String,
+    pub redis: Arc<Mutex<Connection>>,
 }
 
 #[derive(Clone, Debug)]
@@ -28,6 +32,8 @@ async fn main() {
     tracing_subscriber::fmt::init();
     dotenvy::dotenv().ok();
 
+    let redis = Arc::new(Mutex::new(local_redis::create_redis_connection()));
+    
     let supabase_url = env::var("SUPABASE_URL").expect("SUPABASE_URL must be set");
 
     let jwks_url = format!("{}/auth/v1/.well-known/jwks.json", supabase_url.trim_end_matches('/'));
@@ -44,6 +50,7 @@ async fn main() {
         jwks_cache: Arc::new(DashMap::new()),
         supabase_anon_key,
         jwt_secret,
+        redis,
     };
 
     let route = axum::Router::new()

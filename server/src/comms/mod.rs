@@ -1,4 +1,4 @@
-mod store;
+pub mod store;
 mod web_socket;
 mod webrtc;
 

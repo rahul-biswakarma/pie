@@ -1,14 +1,18 @@
 use tokio::sync::mpsc::Sender;
 
 use axum::extract::ws::Message;
+use anyhow::Result;
 
 use crate::{
-    comms::{store::ROOMS, web_socket::message::WsResponse},
+    comms::{web_socket::message::WsResponse},
     error::WsError,
+    AppState,
+    redis,
 };
 
-pub async fn handle_verify_room(room: String, sender: Sender<Message>) -> Result<(), WsError> {
-    let room_exists = ROOMS.contains_key(&room);
+pub async fn handle_verify_room(room: String, sender: Sender<Message>, state: AppState) -> Result<(), WsError> {
+    let room_members = redis::get_room_members(state.redis.clone(), &room).await?;
+    let room_exists = !room_members.is_empty();
 
     let response = if room_exists {
         WsResponse::VerifySuccess { room }

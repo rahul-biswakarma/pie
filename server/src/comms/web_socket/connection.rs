@@ -3,22 +3,23 @@ use std::collections::HashMap;
 use axum::{
     extract::{
         Query, State, WebSocketUpgrade,
-        ws::{Message, Utf8Bytes, WebSocket},
+        ws::{Message, WebSocket},
     },
     response::IntoResponse,
 };
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use uuid::Uuid;
+use anyhow::Result;
 
 use crate::{
     AppState,
     auth::{validate_jwt_token, Claims},
     comms::{
-        store::{CONN_METADATA, ConnId, SOCKET_CONNS},
+        store::{ConnId, SOCKET_CONNS, SFU_PEERS, ConnMetaData},
         web_socket::{message::{WsMessage, WsResponse}, protocol::route_message},
     },
-    error::WsError,
+    redis,
 };
 
 use axum::http::StatusCode;
@@ -52,14 +53,16 @@ async fn handle_upgrade(socket: WebSocket, claims: Claims, state: AppState) {
 
     SOCKET_CONNS.insert(conn_id, tx.clone());
 
-    CONN_METADATA.insert(
-        conn_id,
-        crate::comms::store::ConnMetaData {
-            user_id: claims.user_id().to_string(),
-            last_verified_at: chrono::Utc::now(),
-            ..Default::default()
-        },
-    );
+    let conn_meta_data = ConnMetaData {
+        user_id: claims.user_id().to_string(),
+        room_id: "".to_string(), // Default empty room_id, will be updated on join
+        last_verified_at: chrono::Utc::now(),
+    };
+
+    if let Err(e) = redis::set_conn_metadata(state.redis.clone(), &conn_id, &conn_meta_data).await {
+        tracing::error!("Failed to set connection metadata in Redis: {}", e);
+        // Handle error, perhaps close connection or log more severely
+    }
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let state_clone = state.clone();
@@ -68,8 +71,22 @@ async fn handle_upgrade(socket: WebSocket, claims: Claims, state: AppState) {
     let reader = tokio::spawn(async move {
         while let Some(Ok(msg)) = ws_receiver.next().await {
             if let Message::Text(text) = msg {
+                let message: WsMessage = match serde_json::from_str(&text) {
+                    Ok(msg) => msg,
+                    Err(e) => {
+                        tracing::error!("Failed to parse WebSocket message: {}", e);
+                        let error_response = WsResponse::Error {
+                            message: format!("Invalid message format: {}", e),
+                        };
+                        if let Ok(error_json) = serde_json::to_string(&error_response) {
+                            let _ = tx.send(Message::Text(error_json.into())).await;
+                        }
+                        continue; // Skip to the next message
+                    }
+                };
+
                 if let Err(e) =
-                    handle_message(text, conn_id_clone, tx.clone(), state_clone.clone()).await
+                    route_message(message, conn_id_clone, tx.clone(), &state_clone).await
                 {
                     tracing::error!("Error handling message: {}", e);
                     let error_response = WsResponse::Error {
@@ -82,7 +99,7 @@ async fn handle_upgrade(socket: WebSocket, claims: Claims, state: AppState) {
             }
         }
 
-        cleanup_connection(conn_id_clone);
+        cleanup_connection(conn_id_clone, state_clone).await;
     });
 
     while let Some(msg) = rx.recv().await {
@@ -92,28 +109,16 @@ async fn handle_upgrade(socket: WebSocket, claims: Claims, state: AppState) {
     }
 
     let _ = reader.await;
-    cleanup_connection(conn_id);
+    cleanup_connection(conn_id, state).await;
 }
 
-async fn handle_message(
-    text: Utf8Bytes,
-    conn_id: ConnId,
-    tx: mpsc::Sender<Message>,
-    state: AppState,
-) -> Result<(), WsError> {
-    let message: WsMessage = serde_json::from_str(&text)?;
-    route_message(message, conn_id, tx, &state).await
-}
-
-fn cleanup_connection(conn_id: ConnId) {
+async fn cleanup_connection(conn_id: ConnId, state: AppState) {
     SOCKET_CONNS.remove(&conn_id);
-    CONN_METADATA.remove(&conn_id);
-    crate::comms::store::SFU_PEERS.remove(&conn_id);
+    SFU_PEERS.remove(&conn_id);
 
-    use crate::comms::store::ROOMS;
-    ROOMS.iter_mut().for_each(|room| {
-        room.value().remove(&conn_id);
-    });
+    if let Err(e) = redis::remove_connection(state.redis.clone(), &conn_id).await {
+        tracing::error!("Failed to remove connection from Redis during cleanup: {}", e);
+    }
 
     tracing::info!("Cleaned up connection: {}", conn_id);
 }

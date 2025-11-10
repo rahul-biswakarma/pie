@@ -7,6 +7,7 @@ use crate::{
     error::WsError,
 };
 
+
 mod auth;
 mod ice;
 mod join;
@@ -24,10 +25,11 @@ pub async fn route_message(
     conn_id: ConnId,
     sender: Sender<Message>,
     state: &AppState,
+
 ) -> Result<(), WsError> {
     match message {
-        WsMessage::Join { room, user_id } => handle_join(conn_id, room, user_id, sender).await,
-        WsMessage::VerifyRoom { room } => handle_verify_room(room, sender).await,
+        WsMessage::Join { room, user_id } => handle_join(conn_id, room, user_id, sender, state.clone()).await,
+        WsMessage::VerifyRoom { room } => handle_verify_room(room, sender, state.clone()).await,
         WsMessage::Offer { sdp } => handle_offer(conn_id, sdp, sender).await,
         WsMessage::IceCandidate { candidate } => handle_ice_candidate(conn_id, candidate).await,
         WsMessage::RefreshToken { token } => {
