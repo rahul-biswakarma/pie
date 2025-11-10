@@ -11,6 +11,9 @@ Thumbs.db
 .env.local
 .env*.local
 
+mode_modules
+bun.lock
+
 # Web frontend (Next.js)
 /web/node_modules
 /web/.next/
