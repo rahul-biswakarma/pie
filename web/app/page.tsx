@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
+import { MeetingPage } from "@/modules/meet";
 
 export default async function LandingPage() {
   const supabase = await createClient();
@@ -17,15 +18,14 @@ export default async function LandingPage() {
         <p className="text-lg text-gray-600 mb-8">
           A new collaborative operating system.
         </p>
-        
+        <MeetingPage />
         <div className="flex gap-4 justify-center">
           <Link href={user ? "/lobby" : "/login"}>
-            <Button size="lg">
-              {user ? "Go to Lobby" : "Get Started"}
-            </Button>
+            <Button size="lg">{user ? "Go to Lobby" : "Get Started"}</Button>
           </Link>
         </div>
       </div>
     </div>
   );
 }
+
