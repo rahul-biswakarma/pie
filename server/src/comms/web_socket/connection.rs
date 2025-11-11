@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::Result;
 use axum::{
     extract::{
         Query, State, WebSocketUpgrade,
@@ -10,14 +11,16 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use uuid::Uuid;
-use anyhow::Result;
 
 use crate::{
     AppState,
-    auth::{validate_jwt_token, Claims},
+    auth::{Claims, validate_jwt_token},
     comms::{
-        store::{ConnId, SOCKET_CONNS, SFU_PEERS, ConnMetaData},
-        web_socket::{message::{WsMessage, WsResponse}, protocol::route_message},
+        store::{ConnId, ConnMetaData, SFU_PEERS, SOCKET_CONNS},
+        web_socket::{
+            message::{WsMessage, WsResponse},
+            protocol::route_message,
+        },
     },
     redis,
 };
@@ -74,6 +77,11 @@ async fn handle_upgrade(socket: WebSocket, claims: Claims, state: AppState) {
                 let message: WsMessage = match serde_json::from_str(&text) {
                     Ok(msg) => msg,
                     Err(e) => {
+                        let txt_string: String = text.to_string();
+                        if txt_string == "ping" {
+                            let _ = tx.send(Message::Text("pong".into())).await;
+                            continue;
+                        }
                         tracing::error!("Failed to parse WebSocket message: {}", e);
                         let error_response = WsResponse::Error {
                             message: format!("Invalid message format: {}", e),
@@ -117,7 +125,10 @@ async fn cleanup_connection(conn_id: ConnId, state: AppState) {
     SFU_PEERS.remove(&conn_id);
 
     if let Err(e) = redis::remove_connection(state.redis.clone(), &conn_id).await {
-        tracing::error!("Failed to remove connection from Redis during cleanup: {}", e);
+        tracing::error!(
+            "Failed to remove connection from Redis during cleanup: {}",
+            e
+        );
     }
 
     tracing::info!("Cleaned up connection: {}", conn_id);
