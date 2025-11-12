@@ -12,12 +12,14 @@ mod ice;
 mod join;
 mod offer;
 mod verify;
+mod create;
 
 pub use auth::handle_refresh_token;
 pub use ice::handle_ice_candidate;
 pub use join::handle_join;
 pub use offer::handle_offer;
 pub use verify::handle_verify_room;
+pub use create::handle_create;
 
 pub async fn route_message(
     message: WsMessage,
@@ -26,6 +28,7 @@ pub async fn route_message(
     state: &AppState,
 ) -> Result<(), WsError> {
     match message {
+        WsMessage::Create => handle_create(sender).await,
         WsMessage::Join { room, user_id } => {
             handle_join(conn_id, room, user_id, sender, state.clone()).await
         }

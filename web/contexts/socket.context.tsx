@@ -10,11 +10,12 @@ import {
 import useWebSocket, { ReadyState } from "react-use-websocket";
 import { WebSocketLike } from "react-use-websocket/dist/lib/types";
 import { useAuth } from "./auth.context";
-import { logger } from "@/lib/logger";
 
 interface Socket {
   getWebSocket: () => WebSocketLike | null;
   readyState: ReadyState;
+  sendJsonMessage: (message: any, keep?: boolean) => void;
+  lastJsonMessage: any;
 }
 
 const SocketContext = createContext<Socket | null>(null);
@@ -26,28 +27,25 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const token = session?.access_token;
-    if (token)
-      setSocketUrl(
-        `${process.env.SOCKET_URL ?? "ws://127.0.0.1:3001/socket"}?token=${token}`,
-      );
+    if (token) setSocketUrl(`${process.env.NEXT_PUBLIC_WS_URL}?token=${token}`);
   }, [session]);
 
-  const { sendMessage, lastMessage, readyState, getWebSocket } = useWebSocket(
-    socketUrl,
-    {
-      reconnectAttempts: 10,
-      reconnectInterval: 3000,
-      retryOnError: true,
-      heartbeat: true,
-      onOpen: () => {
-        logger.info("WS connection stablised");
+  const { sendJsonMessage, lastJsonMessage, readyState, getWebSocket } =
+    useWebSocket(
+      socketUrl,
+      {
+        reconnectAttempts: 10,
+        reconnectInterval: 3000,
+        retryOnError: true,
+        heartbeat: true,
       },
-    },
-    !!socketUrl,
-  );
+      !!socketUrl,
+    );
 
   return (
-    <SocketContext.Provider value={{ getWebSocket, readyState }}>
+    <SocketContext.Provider
+      value={{ getWebSocket, readyState, sendJsonMessage, lastJsonMessage }}
+    >
       {children}
     </SocketContext.Provider>
   );

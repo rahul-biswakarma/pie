@@ -1,18 +1,16 @@
-use axum::extract::ws::Message;
-use chrono::Utc;
-use tokio::sync::mpsc::Sender;
-use anyhow::Result;
-
 use crate::{
-    AppState,
     auth::validate_jwt_token,
     comms::{
         store::{ConnId, ConnMetaData},
         web_socket::message::WsResponse,
     },
     error::WsError,
-    redis,
+    redis, AppState,
 };
+use anyhow::Result;
+use axum::extract::ws::Message;
+use chrono::Utc;
+use tokio::sync::mpsc::Sender;
 
 pub async fn handle_refresh_token(
     conn_id: ConnId,
@@ -39,8 +37,9 @@ pub async fn handle_refresh_token(
                 .map_err(|e| WsError::Redis(e.to_string()))?;
 
             let response = WsResponse::AuthOk;
-            let response_json = serde_json::to_string(&response)
-                .map_err(|e| WsError::Serialization(format!("Failed to serialize response: {}", e)))?;
+            let response_json = serde_json::to_string(&response).map_err(|e| {
+                WsError::Serialization(format!("Failed to serialize response: {}", e))
+            })?;
 
             sender
                 .send(Message::Text(response_json.into()))
@@ -49,8 +48,9 @@ pub async fn handle_refresh_token(
         }
         Err(e) => {
             let response = WsResponse::AuthFailed;
-            let response_json = serde_json::to_string(&response)
-                .map_err(|e| WsError::Serialization(format!("Failed to serialize response: {}", e)))?;
+            let response_json = serde_json::to_string(&response).map_err(|e| {
+                WsError::Serialization(format!("Failed to serialize response: {}", e))
+            })?;
 
             let _ = sender.send(Message::Text(response_json.into())).await;
 

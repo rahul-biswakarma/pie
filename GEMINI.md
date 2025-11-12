@@ -60,3 +60,16 @@ The backend is a WebSocket server built with Rust and the `axum` framework. It h
 *   **Commits:** Commit messages should be clear and concise.
 *   **Branching:** Create a new branch for each new feature or bug fix.
 *   **Pull Requests:** Pull requests should be reviewed by at least one other person before being merged.
+
+## Progress Log
+
+**2025-11-10**
+*   **WebSocket Integration:**
+    *   Integrated `react-use-websocket` library into the frontend for robust, real-time communication.
+    *   Created a `SocketProvider` to manage the WebSocket connection lifecycle and provide easy access via a custom hook.
+    *   Implemented token-based authentication for the WebSocket connection, fetching the JWT from the Supabase session.
+*   **Backend Enhancements:**
+    *   Added a heartbeat mechanism (`ping`/`pong`) to the Rust WebSocket server to maintain stable connections.
+*   **Code Refactoring:**
+    *   Relocated the `AuthContext` to a centralized `contexts` directory in the frontend application.
+    *   Committed frontend and backend changes in separate, logical commits.

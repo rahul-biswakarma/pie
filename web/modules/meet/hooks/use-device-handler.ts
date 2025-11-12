@@ -19,7 +19,6 @@ export const useDeviceHandler = () => {
     ) {
       setSelectedVideoDevice(videoDevices[0]);
     }
-
     if (
       !selectedAudioDevice ||
       (selectedAudioDevice &&

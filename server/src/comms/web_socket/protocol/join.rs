@@ -4,14 +4,13 @@ use crate::{
         web_socket::{message::WsResponse, room::broadcast_to_room},
     },
     error::WsError,
-    AppState,
-    redis,
+    redis, AppState,
 };
+use anyhow::Result;
 use axum::extract::ws::Message;
+use chrono::Utc;
 use nanoid::nanoid;
 use tokio::sync::mpsc::Sender;
-use anyhow::Result;
-use chrono::Utc;
 
 pub async fn handle_join(
     conn_id: ConnId,

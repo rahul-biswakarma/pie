@@ -8,7 +8,7 @@ export const MeetingPage = () => {
   const videoContainerRef = useRef<HTMLVideoElement>(null);
 
   const {
-    videoDevices,
+  videoDevices,
     audioDevices,
     selectedVideoDevice,
     selectedAudioDevice,

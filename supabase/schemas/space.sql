@@ -1,0 +1,5 @@
+CREATE TABLE public.space (
+  slug VARCHAR(30) PRIMARY KEY,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_by UUID NOT NULL REFERENCES auth.users (id) ON DELETE CASCADE
+);

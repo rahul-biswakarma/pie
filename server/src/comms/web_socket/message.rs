@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum WsMessage {
+    Create,
     Join {
         room: Option<String>,
         user_id: String,
@@ -24,6 +25,9 @@ pub enum WsMessage {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum WsResponse {
+    CreateOK {
+        room_id: String,
+    },
     VerifySuccess { room: String },
     VerifyError { error: String },
 
