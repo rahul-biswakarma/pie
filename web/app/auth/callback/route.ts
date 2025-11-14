@@ -14,7 +14,6 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       redirect(`/?error=${encodeURIComponent(error.message)}`);
-      return;
     }
   }
 
