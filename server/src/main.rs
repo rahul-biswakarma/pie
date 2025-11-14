@@ -1,67 +1,51 @@
-mod auth;
-mod comms;
-mod redis;
 mod error;
+mod store;
+mod webscoket;
 
-use tokio::sync::Mutex;
-use axum::routing::get;
-use ::redis::Connection;
-use crate::redis as local_redis;
-use comms::websocket_handler;
-use dashmap::DashMap;
-use std::{env, sync::Arc};
+use axum::routing::any;
+use tokio::net::TcpListener;
+
+use crate::{
+    store::{setup_client_map, setup_room_map, ClientMap, ConnId},
+    webscoket::{handle_text_message, handle_ws_upgrade},
+};
 
 #[derive(Clone)]
-pub struct AppState {
-    pub jwks_url: String,
-    pub jwks_cache: Arc<DashMap<String, Jwk>>,
-    pub supabase_anon_key: String,
-    pub jwt_secret: String,
-    pub redis: Arc<Mutex<Connection>>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Jwk {
-    pub kid: String,
-    pub n: String,
-    pub e: String,
+struct AppState {
+    tx_inbound: tokio::sync::mpsc::Sender<(ConnId, String)>,
+    client_map: ClientMap,
 }
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
-    dotenvy::dotenv().ok();
+    let room_map = setup_room_map();
+    let client_map = setup_client_map();
 
-    let redis = Arc::new(Mutex::new(local_redis::create_redis_connection()));
-    
-    let supabase_url = env::var("SUPABASE_URL").expect("SUPABASE_URL must be set");
+    let listner = TcpListener::bind("127.0.0.1:3001")
+        .await
+        .expect("Could not bind to 127.0.0.1:3001");
 
-    let jwks_url = format!("{}/auth/v1/.well-known/jwks.json", supabase_url.trim_end_matches('/'));
-
-    let supabase_anon_key = env::var("SUPABASE_ANON_KEY").expect("SUPABASE_ANON_KEY must be set");
-    
-    let jwt_secret = env::var("SUPABASE_JWT_SECRET").expect("SUPABASE_JWT_SECRET must be set");
-
-    tracing::info!("Starting WebSocket server on 127.0.0.1:3001");
-    tracing::info!("JWKS URL: {}", jwks_url);
+    let (tx_inbound, mut rx_inbound) = tokio::sync::mpsc::channel::<(ConnId, String)>(156);
 
     let state = AppState {
-        jwks_url,
-        jwks_cache: Arc::new(DashMap::new()),
-        supabase_anon_key,
-        jwt_secret,
-        redis,
+        tx_inbound,
+        client_map: client_map.clone(),
     };
 
-    let route = axum::Router::new()
-        .route("/socket", get(websocket_handler))
+    let app = axum::Router::new()
+        .route("/socket", any(handle_ws_upgrade))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3001")
-        .await
-        .expect("Failed to bind to 127.0.0.1:3001");
+    tokio::spawn(async move {
+        while let Some((conn_id, message)) = rx_inbound.recv().await {
+            handle_text_message(
+                conn_id,
+                message.to_string(),
+                client_map.clone(),
+                room_map.clone(),
+            );
+        }
+    });
 
-    tracing::info!("WebSocket server listening on 127.0.0.1:3001");
-
-    axum::serve(listener, route).await.expect("Server failed");
+    axum::serve(listner, app).await.unwrap();
 }
