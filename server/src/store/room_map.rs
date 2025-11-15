@@ -1,11 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
-
-use tokio::sync::Mutex;
-
 use crate::store::ConnId;
+use dashmap::DashMap;
+use std::sync::Arc;
 
-pub type RoomMap = Arc<Mutex<HashMap<String, Vec<ConnId>>>>;
+pub type RoomMap = Arc<DashMap<String, Vec<ConnId>>>;
 
 pub fn setup_room_map() -> RoomMap {
-    RoomMap::new(Mutex::new(HashMap::new()))
+    RoomMap::new(DashMap::new())
 }

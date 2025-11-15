@@ -1,46 +1,35 @@
 use crate::{
-    error::{logger, LogType},
-    store::{ClientMap, ClientMetadata, ConnId, RoomMap, WsMetadata},
+    store::{ClientMap, ClientMetadata, ConnId, RoomMap},
     webscoket::events::WsOutboundEvents,
 };
+use tracing::{error, warn};
 
 pub async fn handle_join(
     conn_id: ConnId,
-    room: String,
-    user_id: String,
+    room_id: String,
     client_map: ClientMap,
     room_map: RoomMap,
     metadata_map: ClientMetadata,
 ) {
-    let client_map_guard = client_map.lock().await;
-    let sender = if let Some(s) = client_map_guard.get(&conn_id) {
-        s
-    } else {
-        // close connection
-        return;
-    };
+    // Add conn_id to room
+    room_map.entry(room_id.clone()).or_default().push(conn_id);
 
-    // if room map exists, add the conn_id else create room entry and add
-    let mut room_map_guard = room_map.lock().await;
-    match room_map_guard.get_mut(&room) {
-        Some(conns_vec) => {
-            conns_vec.push(conn_id);
-        }
-        None => {
-            room_map_guard.insert(room.clone(), vec![conn_id]);
-        }
+    // Update metadata
+    if let Some(mut meta) = metadata_map.get_mut(&conn_id) {
+        meta.room_id = Some(room_id.clone());
     }
 
-    metadata_map
-        .lock()
-        .await
-        .insert(conn_id, WsMetadata { user_id });
-
-    if sender
-        .send(serde_json::to_string(&WsOutboundEvents::JoinOk { room }).unwrap())
-        .await
-        .is_err()
-    {
-        logger(LogType::Error, "sending join_ok failed");
+    // Send confirmation to client
+    if let Some(sender) = client_map.get(&conn_id) {
+        let msg = match serde_json::to_string(&WsOutboundEvents::JoinOk { room: room_id }) {
+            Ok(m) => m,
+            Err(e) => {
+                error!("Failed to serialize JoinOk message: {}", e);
+                return;
+            }
+        };
+        if sender.send(msg).await.is_err() {
+            warn!("sending join_ok to {} failed", conn_id);
+        }
     }
 }
