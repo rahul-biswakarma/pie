@@ -52,7 +52,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 };
 
 export const useSocket = () => {
-  let socketCtx = useContext(SocketContext);
+  const socketCtx = useContext(SocketContext);
 
   if (!socketCtx) {
     throw new Error("useSocket should be called withtin the SocketProvider");

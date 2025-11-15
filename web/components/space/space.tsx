@@ -25,7 +25,7 @@ export const SpacePage = ({ id }: { id: string }) => {
 
   useEffect(() => {
     console.log(lastJsonMessage);
-    if (lastJsonMessage.type === "JoinOk") {
+    if (lastJsonMessage?.type === "JoinOk") {
       sendJsonMessage({
         type: "ListParticipants",
         room: id,
