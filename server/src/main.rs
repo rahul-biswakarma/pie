@@ -1,8 +1,5 @@
 mod store;
 mod webscoket;
-
-use std::env;
-
 use crate::{
     store::{
         setup_client_map, setup_client_metadata_map, setup_room_map, ClientMap, ClientMetadata,
@@ -11,6 +8,7 @@ use crate::{
     webscoket::handle_ws_upgrade,
 };
 use axum::routing::any;
+use std::env;
 use tokio::net::TcpListener;
 
 #[derive(Clone)]

@@ -1,8 +1,8 @@
 use crate::{
     store::{ClientMap, ClientMetadata, ConnId, RoomMap},
-    webscoket::events::WsOutboundEvents,
+    webscoket::{events::WsOutboundEvents, utils::close_connection},
 };
-use tracing::{info, warn};
+use tracing::{warn};
 
 pub async fn handle_list_participants(
     conn_id: ConnId,
@@ -13,15 +13,22 @@ pub async fn handle_list_participants(
     let user_meta = if let Some(meta) = metadata_map.get(&conn_id) {
         meta.clone()
     } else {
-        warn!("Could not find metadata for conn_id {}", conn_id);
+        warn!(
+            "Could not find metadata for conn_id {}. Closing connection.",
+            conn_id
+        );
+        close_connection(conn_id, &client_map, &metadata_map, &room_map);
         return;
     };
 
     let room_id = if let Some(id) = user_meta.room_id {
         id
     } else {
-        warn!("User {} is not in a room", conn_id);
-        // TODO: send an error to client
+        warn!(
+            "User {} is not in a room, but requested participants. Closing connection.",
+            conn_id
+        );
+        close_connection(conn_id, &client_map, &metadata_map, &room_map);
         return;
     };
 
@@ -29,7 +36,11 @@ pub async fn handle_list_participants(
         conns.clone()
     } else {
         // This shouldn't happen if metadata is correct
-        warn!("Room {} not found for user {}", room_id, conn_id);
+        warn!(
+            "Room {} not found for user {}. Closing connection.",
+            room_id, conn_id
+        );
+        close_connection(conn_id, &client_map, &metadata_map, &room_map);
         return;
     };
 
@@ -39,11 +50,6 @@ pub async fn handle_list_participants(
             participants_user_ids.push(meta.user_id.clone());
         }
     }
-
-    info!(
-        "Found participants for room {}: {:?}",
-        room_id, participants_user_ids
-    );
 
     if let Some(sender) = client_map.get(&conn_id) {
         let event = WsOutboundEvents::Participants {
