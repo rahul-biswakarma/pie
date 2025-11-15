@@ -2,6 +2,8 @@ mod error;
 mod store;
 mod webscoket;
 
+use std::env;
+
 use axum::routing::any;
 use tokio::net::TcpListener;
 
@@ -14,12 +16,17 @@ use crate::{
 struct AppState {
     tx_inbound: tokio::sync::mpsc::Sender<(ConnId, String)>,
     client_map: ClientMap,
+    jwt_secret: String,
 }
 
 #[tokio::main]
 async fn main() {
+    dotenv::dotenv().ok();
+
     let room_map = setup_room_map();
     let client_map = setup_client_map();
+
+    let jwt_secret = env::var("SUPABASE_JWT_SECRET").expect("SUPABASE_JWT_SECRET must be set");
 
     let listner = TcpListener::bind("127.0.0.1:3001")
         .await
@@ -30,6 +37,7 @@ async fn main() {
     let state = AppState {
         tx_inbound,
         client_map: client_map.clone(),
+        jwt_secret,
     };
 
     let app = axum::Router::new()
@@ -43,7 +51,8 @@ async fn main() {
                 message.to_string(),
                 client_map.clone(),
                 room_map.clone(),
-            );
+            )
+            .await;
         }
     });
 
