@@ -77,14 +77,27 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     let tx_inbound_clone = state.tx_inbound.clone();
 
-    state.client_map.lock().await.insert(conn_id, tx_outbound);
+    state
+        .client_map
+        .lock()
+        .await
+        .insert(conn_id, tx_outbound.clone());
+
+    // precessing pre-client queue
+    tokio::spawn(async move {
+        while let Some(message) = rx_outbound.recv().await {
+            if ws_sender.send(Message::Text(message.into())).await.is_err() {
+                logger(LogType::Error, "Sending message to client failed");
+            }
+        }
+    });
 
     // registering ws_message into global mpsc channel
     while let Some(Ok(ws_message)) = ws_receiver.next().await {
         match ws_message {
             Message::Text(txt_message) => {
                 if txt_message == "ping" {
-                    if ws_sender.send(Message::Text("pong".into())).await.is_err() {
+                    if tx_outbound.send("pong".into()).await.is_err() {
                         logger(LogType::Error, "pong failed");
                     }
                 } else if tx_inbound_clone
@@ -99,22 +112,6 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             _ => {}
         }
     }
-
-    // precessing pre-client queue
-    tokio::spawn(async move {
-        while let Some(message) = rx_outbound.recv().await {
-            println!("{:?}", message);
-            match ws_sender.send(Message::Text(message.into())).await {
-                Err(e) => {
-                    logger(
-                        LogType::Error,
-                        &format!("Sending message to client failed: {:?}", e),
-                    );
-                }
-                _ => {}
-            }
-        }
-    });
 }
 
 pub async fn handle_text_message(
