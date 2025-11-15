@@ -1,135 +1,179 @@
+use crate::{
+    store::{ConnId, WsMetadata},
+    webscoket::{
+        event_handlers::{handle_join, handle_list_participants},
+        events::{WsInboundEvents, WsOutboundEvents},
+    },
+    AppState,
+};
 use axum::{
     extract::{
         ws::{Message, WebSocket},
-        Query, State, WebSocketUpgrade,
+        State, WebSocketUpgrade,
     },
-    response::IntoResponse,
+    http::HeaderMap,
+    response::{IntoResponse, Response},
 };
 use futures_util::{SinkExt, StreamExt};
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
+use tracing::{error, info, warn};
 use uuid::Uuid;
-
-use crate::{
-    error::{logger, LogType},
-    store::{ClientMap, ClientMetadata, ConnId, RoomMap},
-    webscoket::{event_handlers::handle_join, events::WsInboundEvents},
-    AppState,
-};
-
-#[derive(Debug, Deserialize)]
-pub struct AuthParams {
-    token: Option<String>,
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TokenClaims {
-    // 'sub' stands for "Subject".
-    // In Supabase, this is the user's unique ID (UUID).
     sub: String,
-
-    // 'aud' stands for "Audience".
-    // In Supabase, this is "authenticated" for logged-in users.
     aud: String,
-
-    // 'exp' stands for "Expiration Time".
-    // The jsonwebtoken crate automatically uses this
-    // to check if the token is expired.
     exp: usize,
 }
 
 pub async fn handle_ws_upgrade(
     ws: WebSocketUpgrade,
-    Query(params): Query<AuthParams>,
     State(state): State<AppState>,
-) -> impl IntoResponse {
-    let token = match params.token {
-        Some(token) => token,
-        None => {
-            let msg = "auth token missing";
-            logger(LogType::Error, msg);
-            return (StatusCode::NON_AUTHORITATIVE_INFORMATION, msg).into_response();
-        }
+    headers: HeaderMap,
+) -> Response {
+    let protocols = headers
+        .get("Sec-WebSocket-Protocol")
+        .and_then(|v| v.to_str().ok());
+
+    let token = if let Some(protocols) = protocols {
+        // The header can be a comma-separated list of protocols.
+        // We are looking for the one that is a JWT.
+        // In our case, the client sends only one.
+        protocols.split(',').next().unwrap_or("").trim()
+    } else {
+        let msg = "auth token missing in subprotocol";
+        error!(msg);
+        return (StatusCode::UNAUTHORIZED, msg).into_response();
     };
 
-    let decoding_key = DecodingKey::from_secret(state.jwt_secret.as_bytes());
+    if token.is_empty() {
+        let msg = "auth token is empty";
+        error!(msg);
+        return (StatusCode::UNAUTHORIZED, msg).into_response();
+    }
 
+    let decoding_key = DecodingKey::from_secret(state.jwt_secret.as_bytes());
     let mut validation = Validation::new(Algorithm::HS256);
     validation.set_audience(&["authenticated"]);
 
-    match decode::<TokenClaims>(&token, &decoding_key, &validation) {
-        Ok(_claims) => ws.on_upgrade(|socket| handle_socket(socket, state)),
+    match decode::<TokenClaims>(token, &decoding_key, &validation) {
+        Ok(claims) => {
+            let user_id = claims.claims.sub;
+            ws.on_upgrade(move |socket| handle_socket(socket, state, user_id))
+        }
         Err(e) => {
             let error_message = format!("JWT validation failed: {}", e);
-            logger(LogType::Error, &error_message);
-
+            error!(error_message);
             (StatusCode::UNAUTHORIZED, error_message).into_response()
         }
     }
 }
 
-async fn handle_socket(socket: WebSocket, state: AppState) {
+async fn handle_socket(socket: WebSocket, state: AppState, user_id: String) {
     let conn_id = Uuid::new_v4();
+    info!("New connection: {} ({})", conn_id, user_id);
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let (tx_outbound, mut rx_outbound) = tokio::sync::mpsc::channel::<String>(156);
 
-    let tx_inbound_clone = state.tx_inbound.clone();
+    state.client_map.insert(conn_id, tx_outbound.clone());
+    state.metadata_map.insert(
+        conn_id,
+        WsMetadata {
+            user_id,
+            ..Default::default()
+        },
+    );
 
-    state
-        .client_map
-        .lock()
-        .await
-        .insert(conn_id, tx_outbound.clone());
-
-    // precessing pre-client queue
+    // Outbound message task
     tokio::spawn(async move {
         while let Some(message) = rx_outbound.recv().await {
             if ws_sender.send(Message::Text(message.into())).await.is_err() {
-                logger(LogType::Error, "Sending message to client failed");
+                warn!(
+                    "Sending message to client {} failed, connection might be closed.",
+                    conn_id
+                );
+                break;
             }
         }
     });
 
-    // registering ws_message into global mpsc channel
+    // Inbound message loop
     while let Some(Ok(ws_message)) = ws_receiver.next().await {
         match ws_message {
             Message::Text(txt_message) => {
                 if txt_message == "ping" {
-                    if tx_outbound.send("pong".into()).await.is_err() {
-                        logger(LogType::Error, "pong failed");
+                    if tx_outbound.send("pong".to_string()).await.is_err() {
+                        warn!("pong failed for client {}", conn_id);
                     }
-                } else if tx_inbound_clone
-                    .send((conn_id, txt_message.to_string()))
-                    .await
-                    .is_err()
-                {
-                    logger(LogType::Error, "Setting message to inbonud queue failed");
-                };
+                    continue;
+                }
+
+                let state_clone = state.clone();
+                tokio::spawn(async move {
+                    handle_text_message(conn_id, txt_message.to_string(), state_clone).await;
+                });
             }
-            Message::Ping(_ping_payload) => {}
+            Message::Close(_) => {
+                info!("Connection closed by client {}", conn_id);
+                break;
+            }
             _ => {}
+        }
+    }
+
+    // Cleanup
+    info!("Cleaning up connection: {}", conn_id);
+    state.client_map.remove(&conn_id);
+
+    if let Some((_, metadata)) = state.metadata_map.remove(&conn_id) {
+        if let Some(room_id) = metadata.room_id {
+            if let Some(mut room) = state.room_map.get_mut(&room_id) {
+                room.retain(|id| *id != conn_id);
+                info!("Removed {} from room {}", conn_id, room_id);
+            }
         }
     }
 }
 
-pub async fn handle_text_message(
-    conn_id: ConnId,
-    message: String,
-    client_map: ClientMap,
-    room_map: RoomMap,
-    metadata_map: ClientMetadata,
-) {
+pub async fn handle_text_message(conn_id: ConnId, message: String, state: AppState) {
     let parsed_message: Result<WsInboundEvents, serde_json::Error> = serde_json::from_str(&message);
     match parsed_message {
         Ok(message) => match message {
-            WsInboundEvents::Join { room, user_id } => {
-                handle_join(conn_id, room, user_id, client_map, room_map, metadata_map).await;
+            WsInboundEvents::Join { room } => {
+                handle_join(
+                    conn_id,
+                    room,
+                    state.client_map,
+                    state.room_map,
+                    state.metadata_map,
+                )
+                .await;
+            }
+            WsInboundEvents::ListParticipants => {
+                handle_list_participants(
+                    conn_id,
+                    state.client_map,
+                    state.room_map,
+                    state.metadata_map,
+                )
+                .await;
             }
         },
-        Err(_e) => {
-            logger(LogType::Error, "Failed parsing client message json");
+        Err(e) => {
+            error!("Failed parsing client message json: {}", e);
+            if let Some(sender) = state.client_map.get(&conn_id) {
+                let event = WsOutboundEvents::Error {
+                    message: "Invalid message format".to_string(),
+                };
+                if let Ok(msg) = serde_json::to_string(&event) {
+                    if sender.send(msg).await.is_err() {
+                        warn!("Failed to send error message to client {}", conn_id);
+                    }
+                }
+            }
         }
     }
 }
