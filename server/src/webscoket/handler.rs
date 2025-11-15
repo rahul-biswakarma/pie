@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     error::{logger, LogType},
-    store::{ClientMap, ConnId, RoomMap},
+    store::{ClientMap, ClientMetadata, ConnId, RoomMap},
     webscoket::{event_handlers::handle_join, events::WsInboundEvents},
     AppState,
 };
@@ -119,12 +119,13 @@ pub async fn handle_text_message(
     message: String,
     client_map: ClientMap,
     room_map: RoomMap,
+    metadata_map: ClientMetadata,
 ) {
     let parsed_message: Result<WsInboundEvents, serde_json::Error> = serde_json::from_str(&message);
     match parsed_message {
         Ok(message) => match message {
             WsInboundEvents::Join { room, user_id } => {
-                handle_join(conn_id, room, user_id, client_map, room_map).await;
+                handle_join(conn_id, room, user_id, client_map, room_map, metadata_map).await;
             }
         },
         Err(_e) => {

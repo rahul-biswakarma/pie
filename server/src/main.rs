@@ -8,7 +8,7 @@ use axum::routing::any;
 use tokio::net::TcpListener;
 
 use crate::{
-    store::{setup_client_map, setup_room_map, ClientMap, ConnId},
+    store::{setup_client_map, setup_client_metadata_map, setup_room_map, ClientMap, ConnId},
     webscoket::{handle_text_message, handle_ws_upgrade},
 };
 
@@ -25,6 +25,7 @@ async fn main() {
 
     let room_map = setup_room_map();
     let client_map = setup_client_map();
+    let metadata_map = setup_client_metadata_map();
 
     let jwt_secret = env::var("SUPABASE_JWT_SECRET").expect("SUPABASE_JWT_SECRET must be set");
 
@@ -51,6 +52,7 @@ async fn main() {
                 message.to_string(),
                 client_map.clone(),
                 room_map.clone(),
+                metadata_map.clone(),
             )
             .await;
         }
