@@ -26,8 +26,9 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
   const { session } = useAuth();
 
   useEffect(() => {
-    const token = session?.access_token;
-    if (token) setSocketUrl(`${process.env.NEXT_PUBLIC_WS_URL}?token=${token}`);
+    if (session) {
+      setSocketUrl(process.env.NEXT_PUBLIC_WS_URL!);
+    }
   }, [session]);
 
   const { sendJsonMessage, lastJsonMessage, readyState, getWebSocket } =
@@ -38,8 +39,9 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
         reconnectInterval: 3000,
         retryOnError: true,
         heartbeat: true,
+        protocols: session?.access_token ? [session.access_token] : [],
       },
-      !!socketUrl,
+      !!socketUrl
     );
 
   return (

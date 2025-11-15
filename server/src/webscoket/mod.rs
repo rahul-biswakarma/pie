@@ -1,5 +1,6 @@
 mod event_handlers;
 mod events;
 mod handler;
+pub mod utils;
 
-pub use handler::{handle_text_message, handle_ws_upgrade};
+pub use handler::{handle_ws_upgrade};
